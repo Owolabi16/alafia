@@ -1,0 +1,40 @@
+name: Build Images
+
+on:
+  workflow_call:
+    inputs:
+      ask_occasio_tag:
+        description: "Custom tag for ask-occasio image"
+        required: false
+        type: string
+      occasio_tag:
+        description: "Custom tag for occasio image"
+        required: false
+        type: string
+      init_tag:
+        description: "Custom tag for init image"
+        required: false
+        type: string
+      release_version:
+        description: "Release version"
+        required: false
+        type: string
+    secrets:
+      docker-build-secrets:
+        required: false
+      DOCKER_HUB_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      ask_occasio_tag:
+        description: "Custom tag for ask-occasio image"
+        required: false
+        type: string
+      occasio_tag:
+        description: "Custom tag for occasio image"
+        required: false
+        type: string
+      init_tag:
+        description: "Custom tag for init image"
+        required: false
+        type: string
