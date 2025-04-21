@@ -119,17 +119,17 @@ jobs:
           prerelease: true
           tag: ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}                 
 
-  build-occasio-apps-images:
-    uses: ./.github/workflows/build-images.yaml
-    needs: check-versions
-    secrets: inherit
-    with:
-      ## All should match the occasio app image version
-      occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
-      release_version: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}  # see - https://github.com/occasio-Technology-Solutions/occasio-apps/blob/930cd9476e2578352782c625df47b12d363e4049/charts/occasio/templates/deployment.yaml#L42
-      init_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }} 
+  # build-occasio-apps-images:
+  #   uses: ./.github/workflows/build-images.yaml
+  #   needs: check-versions
+  #   secrets: inherit
+  #   with:
+  #     ## All should match the occasio app image version
+  #     occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+  #     release_version: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}  # see - https://github.com/occasio-Technology-Solutions/occasio-apps/blob/930cd9476e2578352782c625df47b12d363e4049/charts/occasio/templates/deployment.yaml#L42
+  #     init_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }} 
 
-      ask_occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+  #     ask_occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
 
   build-static-files-create-github-release:
     name: Build Static Files and Create GitHub Release
