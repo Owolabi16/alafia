@@ -19,6 +19,11 @@ on:
         description: "Release version"
         required: false
         type: string
+      chart_overwrite:
+        description: "Overwrite existing chart"
+        required: false
+        type: boolean
+        default: false        
     secrets:
       docker-build-secrets:
         required: false
@@ -38,3 +43,317 @@ on:
         description: "Custom tag for init image"
         required: false
         type: string
+
+env:
+  REGISTRY: ghcr.io
+  DOCKER_HUB_USER: owolabialiu
+  HELM_TEMPLATE: template.yaml
+  GPT_CHART_DIR: './.github/workflows/charts/gpt-search'
+  AGENT_CHART_DIR: './.github/workflows/charts/agent-flows'
+  CHART_OVERWRITE: 'false'        
+
+jobs:
+  # get-chart-version-info
+  version-ask-occasio: 
+    runs-on: ubuntu-latest
+    outputs:
+      chart-version: ${{ steps.extract-version.outputs.chart-version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.git_branch }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ env.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.PAT_TOKEN }}
+
+      - name: Run Pre-Build User-defined script
+        if: inputs.pre_build_script != ''
+        run: bash -c '${{ inputs.pre_build_script }}'
+
+      - name: Generate Docs
+        continue-on-error: true
+        uses: docker://jnorwood/helm-docs:v1.11.0
+        with:
+          chart_dir: ${{ env.GPT_CHART_DIR }}
+          chart_overwrite: ${{ env.CHART_OVERWRITE }}
+          entrypoint: helm-docs
+          args: -g $(basename ${{ env.GPT_CHART_DIR }})
+      
+      - name: Install Dependencies
+        run: helm dep build ${{ env.GPT_CHART_DIR }} --skip-refresh
+      
+      - name: Helm Lint
+        run: helm lint ${{ env.GPT_CHART_DIR }}
+      
+      - name: Generate template.yaml
+        if: ${{ !inputs.is_lib_chart }}
+        run: helm template ${{ env.GPT_CHART_DIR }} > ${{ env.GPT_CHART_DIR }}/$HELM_TEMPLATE && cat ${{ env.GPT_CHART_DIR }}/$HELM_TEMPLATE
+      
+      - name: KubeVal Kubernetes Objects
+        if: ${{ !inputs.is_lib_chart }}
+        run: >
+          docker run --rm -v $(pwd)/${{ env.GPT_CHART_DIR }}:/data
+          cytopia/kubeval
+          $HELM_TEMPLATE
+          --output=stdout
+          --strict
+          --ignore-missing-schemas
+      
+      - run: rm -f ${{ env.GPT_CHART_DIR }}/$HELM_TEMPLATE
+        if: ${{ !inputs.is_lib_chart }}
+      
+      - name: Get Chart Name from Chart.yaml
+        run: echo "CHART_NAME=$(yq eval .name ${{ env.GPT_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
+      
+      - name: Get Chart Tag/version from Chart.yaml if not inputted
+        id: extract-version
+        run: |
+          if [ "${{ inputs.chart_tag }}" == "" ]; then
+            VERSION=$(yq eval .version ${{ env.GPT_CHART_DIR }}/Chart.yaml)
+          else
+            VERSION="${{ inputs.chart_tag }}"
+          fi
+          echo "CHART_TAG=$VERSION" >> $GITHUB_ENV
+          echo "chart-version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Chart Registry Overwrite Protection
+        if: ${{ inputs.chart_overwrite == false }}
+        run: '! $(helm pull oci://$REGISTRY/chart/$CHART_NAME --version $CHART_TAG)'
+      
+      - name: Release Helm Chart
+        uses: appany/helm-oci-chart-releaser@v0.4.0
+        with:
+          name: ${{ env.CHART_NAME }}
+          repository: ${{ github.repository_owner }}/charts
+          tag: ${{ env.CHART_TAG }}
+          path: ${{ env.GPT_CHART_DIR }}
+          registry: ghcr.io
+          registry_username: ${{ github.repository_owner }}
+          registry_password: ${{ secrets.PAT_TOKEN }}
+        env:
+          HELM_EXPERIMENTAL_OCI: 1  
+
+  # build-chart
+  ask-occasio-helm-chart-release: 
+    runs-on: ubuntu-latest
+    needs: version-ask-occasio
+    outputs:
+      chart-version: ${{ steps.extract-version.outputs.chart-version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.git_branch }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ env.DOCKER_HUB_USER }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.PAT_TOKEN }}
+
+      - name: Run Pre-Build User-defined script
+        run: bash -c '${{ inputs.pre_build_script }}'
+
+      - name: Generate Docs
+        continue-on-error: true
+        uses: docker://jnorwood/helm-docs:v1.11.0
+        with:
+          entrypoint: helm-docs
+          args: -g $(basename ${{ env.GPT_CHART_DIR }})
+      
+      - name: Install Dependencies
+        run: helm dep build ${{ env.GPT_CHART_DIR }} --skip-refresh
+      
+      - name: Helm Lint
+        run: helm lint ${{ env.GPT_CHART_DIR }}
+      
+      - name: Generate template.yaml
+        if: ${{ !inputs.is_lib_chart }}
+        run: helm template ${{ env.GPT_CHART_DIR }} > ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }} && cat ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+      
+      - name: KubeVal Kubernetes Objects
+        if: ${{ !inputs.is_lib_chart }}
+        run: >
+          docker run --rm -v $(pwd)/${{ env.GPT_CHART_DIR }}:/data
+          cytopia/kubeval
+          ${{ env.HELM_TEMPLATE }}
+          --output=stdout
+          --strict
+          --ignore-missing-schemas
+      
+      - name: Clean up template file
+        if: ${{ !inputs.is_lib_chart }}
+        run: rm -f ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+      
+      - name: Get Chart Name from Chart.yaml
+        run: echo "CHART_NAME=$(yq eval .name ${{ env.GPT_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
+      
+      - name: Get Chart Tag/version from Chart.yaml if not inputted
+        id: extract-version
+        run: |
+          # Always get version from Chart.yaml as fallback
+          CHART_VERSION=$(yq eval .version ${{ env.GPT_CHART_DIR }}/Chart.yaml)
+          
+          # Only use inputs.chart_tag if it's explicitly provided and not "false"
+          if [ -n "${{ inputs.chart_tag }}" ] && [ "${{ inputs.chart_tag }}" != "false" ]; then
+            VERSION="${{ inputs.chart_tag }}"
+          else
+            VERSION="$CHART_VERSION"
+          fi
+          
+          # Validate that we have a proper semantic version
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Error: '$VERSION' is not a valid semantic version"
+            exit 1
+          fi
+          
+          echo "Using chart version: $VERSION"
+          echo "CHART_TAG=$VERSION" >> $GITHUB_ENV
+          echo "chart-version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Chart Registry Overwrite Protection
+        if: ${{ inputs.chart_overwrite == false }}
+        run: |
+          if helm pull oci://${{ env.REGISTRY }}/chart/${{ env.CHART_NAME }} --version ${{ env.CHART_TAG }} 2>/dev/null; then
+            echo "Chart ${{ env.CHART_NAME }}:${{ env.CHART_TAG }} already exists and overwrite is disabled."
+            exit 1
+          fi
+      
+      - name: Release Helm Chart
+        uses: appany/helm-oci-chart-releaser@v0.4.0
+        with:
+          name: ${{ env.CHART_NAME }}
+          repository: owolabi16/charts
+          tag: ${{ env.CHART_TAG }}
+          path: ${{ env.GPT_CHART_DIR }}
+          registry: ghcr.io
+          registry_username: owolabi16
+          registry_password: ${{ secrets.PAT_TOKEN }}
+        env:
+          HELM_EXPERIMENTAL_OCI: 1     
+
+  # build-chart
+  occasio-helm-chart-release: 
+    runs-on: ubuntu-latest
+    needs: version-ask-occasio
+    outputs:
+      chart-version: ${{ steps.extract-version.outputs.chart-version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.git_branch }}
+          fetch-depth: 0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ env.DOCKER_HUB_USER }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.PAT_TOKEN }}
+
+      - name: Run Pre-Build User-defined script
+        run: bash -c '${{ inputs.pre_build_script }}'
+
+      - name: Generate Docs
+        continue-on-error: true
+        uses: docker://jnorwood/helm-docs:v1.11.0
+        with:
+          entrypoint: helm-docs
+          args: -g $(basename ${{ env.GPT_CHART_DIR }})
+      
+      - name: Install Dependencies
+        run: helm dep build ${{ env.GPT_CHART_DIR }} --skip-refresh
+      
+      - name: Helm Lint
+        run: helm lint ${{ env.GPT_CHART_DIR }}
+      
+      - name: Generate template.yaml
+        if: ${{ !inputs.is_lib_chart }}
+        run: helm template ${{ env.GPT_CHART_DIR }} > ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }} && cat ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+      
+      - name: KubeVal Kubernetes Objects
+        if: ${{ !inputs.is_lib_chart }}
+        run: >
+          docker run --rm -v $(pwd)/${{ env.GPT_CHART_DIR }}:/data
+          cytopia/kubeval
+          ${{ env.HELM_TEMPLATE }}
+          --output=stdout
+          --strict
+          --ignore-missing-schemas
+      
+      - name: Clean up template file
+        if: ${{ !inputs.is_lib_chart }}
+        run: rm -f ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+      
+      - name: Get Chart Name from Chart.yaml
+        run: echo "CHART_NAME=$(yq eval .name ${{ env.GPT_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
+      
+      - name: Get Chart Tag/version from Chart.yaml if not inputted
+        id: extract-version
+        run: |
+          # Always get version from Chart.yaml as fallback
+          CHART_VERSION=$(yq eval .version ${{ env.GPT_CHART_DIR }}/Chart.yaml)
+          
+          # Only use inputs.chart_tag if it's explicitly provided and not "false"
+          if [ -n "${{ inputs.chart_tag }}" ] && [ "${{ inputs.chart_tag }}" != "false" ]; then
+            VERSION="${{ inputs.chart_tag }}"
+          else
+            VERSION="$CHART_VERSION"
+          fi
+          
+          # Validate that we have a proper semantic version
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Error: '$VERSION' is not a valid semantic version"
+            exit 1
+          fi
+          
+          echo "Using chart version: $VERSION"
+          echo "CHART_TAG=$VERSION" >> $GITHUB_ENV
+          echo "chart-version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Chart Registry Overwrite Protection
+        if: ${{ inputs.chart_overwrite == false }}
+        run: |
+          if helm pull oci://${{ env.REGISTRY }}/chart/${{ env.CHART_NAME }} --version ${{ env.CHART_TAG }} 2>/dev/null; then
+            echo "Chart ${{ env.CHART_NAME }}:${{ env.CHART_TAG }} already exists and overwrite is disabled."
+            exit 1
+          fi
+      
+      - name: Release Helm Chart
+        uses: appany/helm-oci-chart-releaser@v0.4.0
+        with:
+          name: ${{ env.CHART_NAME }}
+          repository: owolabi16/charts
+          tag: ${{ env.CHART_TAG }}
+          path: ${{ env.GPT_CHART_DIR }}
+          registry: ghcr.io
+          registry_username: owolabi16
+          registry_password: ${{ secrets.PAT_TOKEN }}
+        env:
+          HELM_EXPERIMENTAL_OCI: 1     
