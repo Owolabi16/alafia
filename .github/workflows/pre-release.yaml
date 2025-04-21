@@ -35,10 +35,10 @@ jobs:
       - name: Get Release Versions
         id: releaseVersions
         run: |
-          ask_occasio_version=$(yq '.appVersion' ./.github/workflow/charts/ask-occasio/Chart.yaml)
-          occasio_version=$(yq '.appVersion' ./.github/workflow/charts/occasio/Chart.yaml)
-          occasio_chart_version=$(yq '.version' ./.github/workflow/charts/occasio/Chart.yaml)
-          ask_occasio_chart_version=$(yq '.version' ./.github/workflow/charts/ask-occasio/Chart.yaml)
+          ask_occasio_version=$(yq '.appVersion' ./.github/workflows/charts/ask-occasio/Chart.yaml)
+          occasio_version=$(yq '.appVersion' ./.github/workflows/charts/occasio/Chart.yaml)
+          occasio_chart_version=$(yq '.version' ./.github/workflows/charts/occasio/Chart.yaml)
+          ask_occasio_chart_version=$(yq '.version' ./.github/workflows/charts/ask-occasio/Chart.yaml)
 
           echo "ASK_OCASSIO_APP_TAG=$ask_occasio_version" >> $GITHUB_OUTPUT
           echo "OCASSIO_APP_TAG=$occasio_version" >> $GITHUB_OUTPUT
