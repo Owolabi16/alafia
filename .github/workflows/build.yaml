@@ -356,7 +356,7 @@ jobs:
           name: ${{ env.CHART_NAME }}
           repository: owolabi16/charts
           tag: ${{ env.CHART_TAG }}
-          path: ${{ env.ASK_OCCASIO_CHART_DIR }}
+          path: ${{ env.OCCASIO_CHART_DIR }}
           registry: ghcr.io
           registry_username: owolabi16
           registry_password: ${{ secrets.PAT_TOKEN }}
