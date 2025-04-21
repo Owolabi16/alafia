@@ -53,8 +53,8 @@ env:
   DOCKER_HUB_USER: owolabialiu
   DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   HELM_TEMPLATE: template.yaml
-  GPT_CHART_DIR: './.github/workflows/charts/gpt-search'
-  AGENT_CHART_DIR: './.github/workflows/charts/agent-flows'
+  ASK_OCCASIO_CHART_DIR: './.github/workflows/charts/ask-occasio'
+  OCCASIO_CHART_DIR: './.github/workflows/charts/occasio'
   CHART_OVERWRITE: 'false'        
 
 jobs:
@@ -90,42 +90,42 @@ jobs:
         continue-on-error: true
         uses: docker://jnorwood/helm-docs:v1.11.0
         with:
-          chart_dir: ${{ env.GPT_CHART_DIR }}
+          chart_dir: ${{ env.ASK_OCCASIO_CHART_DIR }}
           chart_overwrite: ${{ env.CHART_OVERWRITE }}
           entrypoint: helm-docs
-          args: -g $(basename ${{ env.GPT_CHART_DIR }})
+          args: -g $(basename ${{ env.ASK_OCCASIO_CHART_DIR }})
       
       - name: Install Dependencies
-        run: helm dep build ${{ env.GPT_CHART_DIR }} --skip-refresh
+        run: helm dep build ${{ env.ASK_OCCASIO_CHART_DIR }} --skip-refresh
       
       - name: Helm Lint
-        run: helm lint ${{ env.GPT_CHART_DIR }}
+        run: helm lint ${{ env.ASK_OCCASIO_CHART_DIR }}
       
       - name: Generate template.yaml
         if: ${{ !inputs.is_lib_chart }}
-        run: helm template ${{ env.GPT_CHART_DIR }} > ${{ env.GPT_CHART_DIR }}/$HELM_TEMPLATE && cat ${{ env.GPT_CHART_DIR }}/$HELM_TEMPLATE
+        run: helm template ${{ env.ASK_OCCASIO_CHART_DIR }} > ${{ env.ASK_OCCASIO_CHART_DIR }}/$HELM_TEMPLATE && cat ${{ env.ASK_OCCASIO_CHART_DIR }}/$HELM_TEMPLATE
       
       - name: KubeVal Kubernetes Objects
         if: ${{ !inputs.is_lib_chart }}
         run: >
-          docker run --rm -v $(pwd)/${{ env.GPT_CHART_DIR }}:/data
+          docker run --rm -v $(pwd)/${{ env.ASK_OCCASIO_CHART_DIR }}:/data
           cytopia/kubeval
           $HELM_TEMPLATE
           --output=stdout
           --strict
           --ignore-missing-schemas
       
-      - run: rm -f ${{ env.GPT_CHART_DIR }}/$HELM_TEMPLATE
+      - run: rm -f ${{ env.ASK_OCCASIO_CHART_DIR }}/$HELM_TEMPLATE
         if: ${{ !inputs.is_lib_chart }}
       
       - name: Get Chart Name from Chart.yaml
-        run: echo "CHART_NAME=$(yq eval .name ${{ env.GPT_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
+        run: echo "CHART_NAME=$(yq eval .name ${{ env.ASK_OCCASIO_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
       
       - name: Get Chart Tag/version from Chart.yaml if not inputted
         id: extract-version
         run: |
           if [ "${{ inputs.chart_tag }}" == "" ]; then
-            VERSION=$(yq eval .version ${{ env.GPT_CHART_DIR }}/Chart.yaml)
+            VERSION=$(yq eval .version ${{ env.ASK_OCCASIO_CHART_DIR }}/Chart.yaml)
           else
             VERSION="${{ inputs.chart_tag }}"
           fi
@@ -142,7 +142,7 @@ jobs:
           name: ${{ env.CHART_NAME }}
           repository: ${{ github.repository_owner }}/charts
           tag: ${{ env.CHART_TAG }}
-          path: ${{ env.GPT_CHART_DIR }}
+          path: ${{ env.ASK_OCCASIO_CHART_DIR }}
           registry: ghcr.io
           registry_username: ${{ github.repository_owner }}
           registry_password: ${{ secrets.PAT_TOKEN }}
@@ -183,22 +183,22 @@ jobs:
         uses: docker://jnorwood/helm-docs:v1.11.0
         with:
           entrypoint: helm-docs
-          args: -g $(basename ${{ env.GPT_CHART_DIR }})
+          args: -g $(basename ${{ env.ASK_OCCASIO_CHART_DIR }})
       
       - name: Install Dependencies
-        run: helm dep build ${{ env.GPT_CHART_DIR }} --skip-refresh
+        run: helm dep build ${{ env.ASK_OCCASIO_CHART_DIR }} --skip-refresh
       
       - name: Helm Lint
-        run: helm lint ${{ env.GPT_CHART_DIR }}
+        run: helm lint ${{ env.ASK_OCCASIO_CHART_DIR }}
       
       - name: Generate template.yaml
         if: ${{ !inputs.is_lib_chart }}
-        run: helm template ${{ env.GPT_CHART_DIR }} > ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }} && cat ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+        run: helm template ${{ env.ASK_OCCASIO_CHART_DIR }} > ${{ env.ASK_OCCASIO_CHART_DIR }}/${{ env.HELM_TEMPLATE }} && cat ${{ env.ASK_OCCASIO_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
       
       - name: KubeVal Kubernetes Objects
         if: ${{ !inputs.is_lib_chart }}
         run: >
-          docker run --rm -v $(pwd)/${{ env.GPT_CHART_DIR }}:/data
+          docker run --rm -v $(pwd)/${{ env.ASK_OCCASIO_CHART_DIR }}:/data
           cytopia/kubeval
           ${{ env.HELM_TEMPLATE }}
           --output=stdout
@@ -207,16 +207,16 @@ jobs:
       
       - name: Clean up template file
         if: ${{ !inputs.is_lib_chart }}
-        run: rm -f ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+        run: rm -f ${{ env.ASK_OCCASIO_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
       
       - name: Get Chart Name from Chart.yaml
-        run: echo "CHART_NAME=$(yq eval .name ${{ env.GPT_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
+        run: echo "CHART_NAME=$(yq eval .name ${{ env.ASK_OCCASIO_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
       
       - name: Get Chart Tag/version from Chart.yaml if not inputted
         id: extract-version
         run: |
           # Always get version from Chart.yaml as fallback
-          CHART_VERSION=$(yq eval .version ${{ env.GPT_CHART_DIR }}/Chart.yaml)
+          CHART_VERSION=$(yq eval .version ${{ env.ASK_OCCASIO_CHART_DIR }}/Chart.yaml)
           
           # Only use inputs.chart_tag if it's explicitly provided and not "false"
           if [ -n "${{ inputs.chart_tag }}" ] && [ "${{ inputs.chart_tag }}" != "false" ]; then
@@ -249,7 +249,7 @@ jobs:
           name: ${{ env.CHART_NAME }}
           repository: owolabi16/charts
           tag: ${{ env.CHART_TAG }}
-          path: ${{ env.GPT_CHART_DIR }}
+          path: ${{ env.ASK_OCCASIO_CHART_DIR }}
           registry: ghcr.io
           registry_username: owolabi16
           registry_password: ${{ secrets.PAT_TOKEN }}
@@ -290,22 +290,22 @@ jobs:
         uses: docker://jnorwood/helm-docs:v1.11.0
         with:
           entrypoint: helm-docs
-          args: -g $(basename ${{ env.GPT_CHART_DIR }})
+          args: -g $(basename ${{ env.OCCASIO_CHART_DIR }})
       
       - name: Install Dependencies
-        run: helm dep build ${{ env.GPT_CHART_DIR }} --skip-refresh
+        run: helm dep build ${{ env.OCCASIO_CHART_DIR }} --skip-refresh
       
       - name: Helm Lint
-        run: helm lint ${{ env.GPT_CHART_DIR }}
+        run: helm lint ${{ env.OCCASIO_CHART_DIR }}
       
       - name: Generate template.yaml
         if: ${{ !inputs.is_lib_chart }}
-        run: helm template ${{ env.GPT_CHART_DIR }} > ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }} && cat ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+        run: helm template ${{ env.OCCASIO_CHART_DIR }} > ${{ env.OCCASIO_CHART_DIR }}/${{ env.HELM_TEMPLATE }} && cat ${{ env.OCCASIO_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
       
       - name: KubeVal Kubernetes Objects
         if: ${{ !inputs.is_lib_chart }}
         run: >
-          docker run --rm -v $(pwd)/${{ env.GPT_CHART_DIR }}:/data
+          docker run --rm -v $(pwd)/${{ env.OCCASIO_CHART_DIR }}:/data
           cytopia/kubeval
           ${{ env.HELM_TEMPLATE }}
           --output=stdout
@@ -314,16 +314,16 @@ jobs:
       
       - name: Clean up template file
         if: ${{ !inputs.is_lib_chart }}
-        run: rm -f ${{ env.GPT_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
+        run: rm -f ${{ env.OCCASIO_CHART_DIR }}/${{ env.HELM_TEMPLATE }}
       
       - name: Get Chart Name from Chart.yaml
-        run: echo "CHART_NAME=$(yq eval .name ${{ env.GPT_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
+        run: echo "CHART_NAME=$(yq eval .name ${{ env.OCCASIO_CHART_DIR }}/Chart.yaml)" >> $GITHUB_ENV
       
       - name: Get Chart Tag/version from Chart.yaml if not inputted
         id: extract-version
         run: |
           # Always get version from Chart.yaml as fallback
-          CHART_VERSION=$(yq eval .version ${{ env.GPT_CHART_DIR }}/Chart.yaml)
+          CHART_VERSION=$(yq eval .version ${{ env.OCCASIO_CHART_DIR }}/Chart.yaml)
           
           # Only use inputs.chart_tag if it's explicitly provided and not "false"
           if [ -n "${{ inputs.chart_tag }}" ] && [ "${{ inputs.chart_tag }}" != "false" ]; then
@@ -356,7 +356,7 @@ jobs:
           name: ${{ env.CHART_NAME }}
           repository: owolabi16/charts
           tag: ${{ env.CHART_TAG }}
-          path: ${{ env.GPT_CHART_DIR }}
+          path: ${{ env.ASK_OCCASIO_CHART_DIR }}
           registry: ghcr.io
           registry_username: owolabi16
           registry_password: ${{ secrets.PAT_TOKEN }}
