@@ -1,0 +1,31 @@
+name: "Publish Storybook"
+
+on:
+  pull_request:
+    branches:
+      - "development"
+      - "platform-**"
+
+jobs:
+  chromatic:
+    name: Run Chromatic
+    runs-on: occasio-runner-fleet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # See https://www.chromatic.com/docs/github-actions/#recommended-configuration-for-build-events
+          ref: ${{ github.event.pull_request.head.ref }}
+        env:
+          CHROMATIC_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          CHROMATIC_SHA: ${{ github.event.pull_request.head.sha || github.ref }}
+          CHROMATIC_SLUG: ${{ github.repository }}
+
+      - name: Setup
+        uses: ./tooling/github/setup
+
+      - name: Publish Storybook to Chromatic
+        uses: chromaui/action@latest
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          workingDir: apps/storybook

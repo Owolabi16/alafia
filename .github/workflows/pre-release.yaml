@@ -1,0 +1,177 @@
+name: Pre-Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        type: string
+        description: "Branch to pre release"
+        required: true
+      release_level:
+        type: choice
+        description: "Pre Release level"
+        required: true
+        options:
+          - major
+          - minor
+          - patch
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      OCASSIO_APP_TAG: ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}
+      OCASSIO_CHART_TAG: ${{ steps.releaseVersions.outputs.OCASSIO_CHART_TAG }}
+      ASK_OCASSIO_APP_TAG: ${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}
+      ASK_OCASSIO_CHART_TAG: ${{ steps.releaseVersions.outputs.ASK_OCASSIO_CHART_TAG }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-tags: true
+          ref: ${{ inputs.branch }}
+
+      - name: Get Release Versions
+        id: releaseVersions
+        run: |
+          ask_occasio_version=$(yq '.appVersion' charts/ask-occasio/Chart.yaml)
+          occasio_version=$(yq '.appVersion' charts/occasio/Chart.yaml)
+          occasio_chart_version=$(yq '.version' charts/occasio/Chart.yaml)
+          ask_occasio_chart_version=$(yq '.version' charts/ask-occasio/Chart.yaml)
+
+          echo "ASK_OCASSIO_APP_TAG=$ask_occasio_version" >> $GITHUB_OUTPUT
+          echo "OCASSIO_APP_TAG=$occasio_version" >> $GITHUB_OUTPUT
+          echo "OCASSIO_CHART_TAG=$occasio_chart_version" >> $GITHUB_OUTPUT
+          echo "ASK_OCASSIO_CHART_TAG=$ask_occasio_chart_version" >> $GITHUB_OUTPUT
+
+      - name: Validate Pre-Release Version Formats
+        run: |
+          # Validate chart versions (should end with -something)
+          if [[ ! "${{ steps.releaseVersions.outputs.OCASSIO_CHART_TAG }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-zA-Z0-9]+$ ]]; then
+            echo "Error: occasio chart version must be in format x.x.x-* (got ${{ steps.releaseVersions.outputs.OCASSIO_CHART_TAG }})"
+            exit 1
+          fi
+
+          if [[ ! "${{ steps.releaseVersions.outputs.ASK_OCASSIO_CHART_TAG }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-zA-Z0-9]+$ ]]; then
+            echo "Error: ask-occasio chart version must be in format x.x.x-* (got ${{ steps.releaseVersions.outputs.ASK_OCASSIO_CHART_TAG }})"
+            exit 1
+          fi
+
+          # Validate app versions (should start with pr-)
+          if [[ ! "${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}" =~ ^pr-.*$ ]]; then
+            echo "Error: occasio app version must start with 'pr-' (got ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }})"
+            exit 1
+          fi
+
+          if [[ ! "${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}" =~ ^pr-.*$ ]]; then
+            echo "Error: ask-occasio app version must start with 'pr-' (got ${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }})"
+            exit 1
+          fi
+
+          echo "All version formats validated successfully"
+
+      - name: Ask occasio App Image Version Exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          response=$(curl -s -H "Authorization: Bearer $(echo -n $GH_TOKEN | base64)" \
+            "https://ghcr.io/v2/occasio-technology-solutions/occasio-apps/manifests/${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}")
+          echo "Response: $response"
+          if echo "$response" | jq -e '.errors[].code == "MANIFEST_UNKNOWN"' >/dev/null 2>&1; then
+            echo "Error: Image manifest not found for tag ${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}"
+            exit 1
+          else
+            echo "Ask occasio Image manifest found for tag ${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }} - proceeding"
+          fi
+
+      - name: occasio App Image Version Exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          response=$(curl -s -H "Authorization: Bearer $(echo -n $GH_TOKEN | base64)" \
+            "https://ghcr.io/v2/occasio-technology-solutions/occasio/manifests/${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}")
+          echo "Response: $response"
+          if echo "$response" | jq -e '.errors[].code == "MANIFEST_UNKNOWN"' >/dev/null 2>&1; then
+            echo "Error: Image manifest not found for tag ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}"
+            exit 1
+          else
+            echo "occasio Image manifest found for tag ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }} - proceeding"
+          fi
+
+      - name: Setup
+        uses: ./tooling/github/setup
+
+      - name: Build and Compress Files
+        run: |
+          pnpm -F occasio with-env -f .env.ci pnpm build:_
+          tar -czf static.tar.gz -C apps/occasio/dist .
+
+      - uses: ncipollo/release-action@v1
+        name: Create Pre Release (Same Version as occasio App to match static assets tag)
+        with:
+          artifacts: "static.tar.gz"
+          makeLatest: false
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generateReleaseNotes: true
+          skipIfReleaseExists: false
+          prerelease: true
+          tag: ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}                 
+
+  build-occasio-apps-images:
+    uses: ./.github/workflows/build-images.yaml
+    needs: check-versions
+    secrets: inherit
+    with:
+      ## All should match the occasio app image version
+      occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+      release_version: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}  # see - https://github.com/occasio-Technology-Solutions/occasio-apps/blob/930cd9476e2578352782c625df47b12d363e4049/charts/occasio/templates/deployment.yaml#L42
+      init_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }} 
+
+      ask_occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+
+  build-static-files-create-github-release:
+    name: Build Static Files and Create GitHub Release
+    runs-on: [self-hosted, ARM64, build]
+    needs: [check-versions]
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-tags: true
+          ref: ${{ inputs.branch }}
+
+      - name: Setup
+        uses: ./tooling/github/setup
+
+      - name: Build and Compress Files
+        run: |
+          pnpm -F occasio with-env -f .env.ci pnpm build:_
+          tar -czf static.tar.gz -C apps/occasio/dist .
+
+      - uses: ncipollo/release-action@v1
+        name: Create Release
+        with:
+          artifacts: "static.tar.gz"
+          makeLatest: true
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generateReleaseNotes: true
+          skipIfReleaseExists: false
+          prerelease: true
+          tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }} # see - https://github.com/occasio-Technology-Solutions/occasio-apps/blob/930cd9476e2578352782c625df47b12d363e4049/charts/occasio/templates/deployment.yaml#L42
+
+  build-occasio-apps-charts:
+    uses: ./.github/workflows/build-charts.yaml
+    needs: check-versions
+    secrets: inherit
+    with:
+      ask_occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
+      occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
+      chart_overwrite: true          

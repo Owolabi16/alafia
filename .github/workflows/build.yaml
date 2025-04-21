@@ -51,6 +51,7 @@ on:
 env:
   REGISTRY: ghcr.io
   DOCKER_HUB_USER: owolabialiu
+  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   HELM_TEMPLATE: template.yaml
   GPT_CHART_DIR: './.github/workflows/charts/gpt-search'
   AGENT_CHART_DIR: './.github/workflows/charts/agent-flows'
@@ -72,7 +73,7 @@ jobs:
         uses: docker/login-action@v2
         with:
           username: ${{ env.DOCKER_HUB_USER }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2

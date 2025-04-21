@@ -1,0 +1,90 @@
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - development
+      - "releases/**"
+env:
+  NODE_VERSION: 19.9.0
+  GHA_ENV: "DEV"
+  # Disable husky hooks
+  HUSKY: 0
+name: Run Publish
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  run-publish:
+    name: Publish
+    runs-on: [self-hosted, ARM64, build]
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          registry-url: https://npm.pkg.github.com
+          node-version: 19
+
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build:dist
+
+      - name: Create .npmrc
+        run: |
+          cat << EOF > "$HOME/.npmrc"
+            //npm.pkg.github.com/:_authToken=$GITHUB_TOKEN
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release Pull Request or Publish to npm
+        # This is the last version of the action that uses node 16
+        uses: changesets/action@v1.4.7
+        id: changesets
+        with:
+          publish: pnpm release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get current branch
+        id: get_branch
+        run: echo "CURRENT_BRANCH=$(git branch --show-current)" >> $GITHUB_ENV
+
+      - name: Update lock file
+        if: env.CURRENT_BRANCH == 'changeset-release/development'
+        run: pnpm install --lockfile-only
+
+      - name: Commit lock file
+        if: env.CURRENT_BRANCH == 'changeset-release/development'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update lock file"
+          branch: changeset-release/development
