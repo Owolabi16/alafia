@@ -43,6 +43,10 @@ on:
         description: "Custom tag for init image"
         required: false
         type: string
+  push:
+    branches:
+      - "platform-*"
+      - "development"
 
 env:
   REGISTRY: ghcr.io
