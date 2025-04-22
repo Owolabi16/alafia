@@ -76,13 +76,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           response=$(curl -s -H "Authorization: Bearer $(echo -n $GH_TOKEN | base64)" \
-            "https://ghcr.io/v2/occasio-technology-solutions/occasio-apps/manifests/${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}")
+            "https://ghcr.io/v2/owolabi16/charts/manifests/ask-occasio:${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}")
           echo "Response: $response"
           if echo "$response" | jq -e '.errors[].code == "MANIFEST_UNKNOWN"' >/dev/null 2>&1; then
-            echo "Error: Image manifest not found for tag ${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}"
+            echo "Error: Image manifest not found for tag ask-occasio:${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }}"
             exit 1
           else
-            echo "Ask occasio Image manifest found for tag ${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }} - proceeding"
+            echo "Ask occasio Image manifest found for tag ask-occasio:${{ steps.releaseVersions.outputs.ASK_OCASSIO_APP_TAG }} - proceeding"
           fi
 
       - name: occasio App Image Version Exists
@@ -90,13 +90,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           response=$(curl -s -H "Authorization: Bearer $(echo -n $GH_TOKEN | base64)" \
-            "https://ghcr.io/v2/occasio-technology-solutions/occasio/manifests/${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}")
+            "https://ghcr.io/v2/owolabi16/charts/manifests/occasio:${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}")
           echo "Response: $response"
           if echo "$response" | jq -e '.errors[].code == "MANIFEST_UNKNOWN"' >/dev/null 2>&1; then
-            echo "Error: Image manifest not found for tag ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}"
+            echo "Error: Image manifest not found for tag occasio:${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}"
             exit 1
           else
-            echo "occasio Image manifest found for tag ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }} - proceeding"
+            echo "occasio Image manifest found for tag occasio:${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }} - proceeding"
           fi
 
       - name: Setup
