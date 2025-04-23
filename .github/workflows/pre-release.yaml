@@ -14,7 +14,15 @@ on:
         options:
           - major
           - minor
-          - patch
+          - patch        
+env:
+  REGISTRY: ghcr.io
+  DOCKER_HUB_USER: owolabialiu
+  HELM_TEMPLATE: template.yaml
+  GPT_CHART_DIR: './.github/workflows/charts/gpt-search'
+  AGENT_CHART_DIR: './.github/workflows/charts/agent-flows'
+  CHART_OVERWRITE: 'false'
+
 jobs:
   check-versions:
     runs-on: ubuntu-latest
@@ -100,40 +108,94 @@ jobs:
           fi
 
       - name: Setup
-        uses: ./tooling/github/setup
+        run: echo "./tooling/github/setup is missing.."
 
       - name: Build and Compress Files
-        run: |
-          pnpm -F occasio with-env -f .env.ci pnpm build:_
-          tar -czf static.tar.gz -C apps/occasio/dist .
+        run: echo " building and comprressing files..."               
 
-      - uses: ncipollo/release-action@v1
-        name: Create Pre Release (Same Version as occasio App to match static assets tag)
+
+  build-occasio-apps-images:
+    runs-on: ubuntu-latest
+    needs: 'check-versions'
+    secrets: inherit
+    with:
+      ## All should match the occasio app image version
+      occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+      release_version: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+      ask_occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+    outputs:
+      docker-tag: ${{ steps.meta.outputs.version }}
+      docker-repo: ${{ steps.docker-repo.outputs.DOCKER_REPOSITORY }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
         with:
-          artifacts: "static.tar.gz"
-          makeLatest: false
-          allowUpdates: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          generateReleaseNotes: true
-          skipIfReleaseExists: false
-          prerelease: true
-          tag: ${{ steps.releaseVersions.outputs.OCASSIO_APP_TAG }}                 
+          username: ${{ env.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+      - name: Set Docker Repository Variable
+        run: echo "DOCKER_REPOSITORY=${{ env.DOCKER_HUB_USER }}/$( echo ${{ github.repository }} | awk -F '/' '{print $2}' | awk '{print tolower($0)}' )" >> $GITHUB_ENV
+      
+      - name: Set Docker Repository Output
+        id: docker-repo
+        run: echo "DOCKER_REPOSITORY=${{ env.DOCKER_HUB_USER }}/$( echo ${{ github.repository }} | awk -F '/' '{print $2}' | awk '{print tolower($0)}' )" >> $GITHUB_OUTPUT
+      
+      - name: Set Repository Owner
+        run: echo "REPO_OWNER=$( echo ${{ github.repository_owner }} | awk '{print tolower($0)}' )" >> $GITHUB_ENV
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-  # build-occasio-apps-images:
-  #   uses: ./.github/workflows/build-images.yaml
-  #   needs: check-versions
-  #   secrets: inherit
-  #   with:
-  #     ## All should match the occasio app image version
-  #     occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
-  #     release_version: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}  # see - https://github.com/occasio-Technology-Solutions/occasio-apps/blob/930cd9476e2578352782c625df47b12d363e4049/charts/occasio/templates/deployment.yaml#L42
-  #     init_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }} 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.PAT_TOKEN }}   
+      
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: |
+            ${{ inputs.custom-image-name != '' && format('{0}/{1}', env.DOCKER_HUB_USER, inputs.custom-image-name) || env.DOCKER_REPOSITORY }}
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=pr,suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=semver,pattern={{version}},suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=semver,pattern={{major}},suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=sha
+            type=raw,value=${{inputs.build-target}}
+           
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          build-args: ${{ inputs.docker-build-args }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          file: ${{ inputs.dockerfile-path }}
+          platforms: ${{ inputs.docker-arch }}
+          pull: true
+          no-cache: false
+          cache-from: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/cache:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/cache:buildcache,mode=max
+          target: ${{ inputs.build-target }}
 
-  #     ask_occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
 
   build-static-files-create-github-release:
     name: Build Static Files and Create GitHub Release
-    runs-on: [self-hosted, ARM64, build]
+    runs-on: ubuntu-latest
     needs: [check-versions]
     permissions:
       contents: write
@@ -143,17 +205,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
           fetch-tags: true
           ref: ${{ inputs.branch }}
 
       - name: Setup
-        uses: ./tooling/github/setup
+        run: echo "./tooling/github/setup is missing.."
 
       - name: Build and Compress Files
-        run: |
-          pnpm -F occasio with-env -f .env.ci pnpm build:_
-          tar -czf static.tar.gz -C apps/occasio/dist .
+        run: echo " building and comprressing files..."  
 
       - uses: ncipollo/release-action@v1
         name: Create Release
@@ -161,17 +221,89 @@ jobs:
           artifacts: "static.tar.gz"
           makeLatest: true
           allowUpdates: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
           generateReleaseNotes: true
           skipIfReleaseExists: false
           prerelease: true
           tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }} # see - https://github.com/occasio-Technology-Solutions/occasio-apps/blob/930cd9476e2578352782c625df47b12d363e4049/charts/occasio/templates/deployment.yaml#L42
 
-  # build-occasio-apps-charts:
-  #   uses: ./.github/workflows/build-charts.yaml
-  #   needs: check-versions
-  #   secrets: inherit
-  #   with:
-  #     ask_occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
-  #     occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
-  #     chart_overwrite: true          
+  build-occasio-apps-charts:
+    uses: ./.github/workflows/build-charts.yaml
+    needs: check-versions
+    secrets: inherit
+    with:
+      ask_occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
+      occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
+      chart_overwrite: true          
+
+  build-occasio-apps-charts:
+    runs-on: ubuntu-latest
+    needs: 'check-versions'
+    outputs:
+      docker-tag: ${{ steps.meta.outputs.version }}
+      docker-repo: ${{ steps.docker-repo.outputs.DOCKER_REPOSITORY }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ env.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+      - name: Set Docker Repository Variable
+        run: echo "DOCKER_REPOSITORY=${{ env.DOCKER_HUB_USER }}/$( echo ${{ github.repository }} | awk -F '/' '{print $2}' | awk '{print tolower($0)}' )" >> $GITHUB_ENV
+      
+      - name: Set Docker Repository Output
+        id: docker-repo
+        run: echo "DOCKER_REPOSITORY=${{ env.DOCKER_HUB_USER }}/$( echo ${{ github.repository }} | awk -F '/' '{print $2}' | awk '{print tolower($0)}' )" >> $GITHUB_OUTPUT
+      
+      - name: Set Repository Owner
+        run: echo "REPO_OWNER=$( echo ${{ github.repository_owner }} | awk '{print tolower($0)}' )" >> $GITHUB_ENV
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.PAT_TOKEN }}   
+      
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: |
+            ${{ inputs.custom-image-name != '' && format('{0}/{1}', env.DOCKER_HUB_USER, inputs.custom-image-name) || env.DOCKER_REPOSITORY }}
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=pr,suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=semver,pattern={{version}},suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=semver,pattern={{major}},suffix=${{ inputs.build-target != '' && format('-{0}', inputs.build-target) || ''}}
+            type=sha
+            type=raw,value=${{inputs.build-target}}
+           
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          build-args: ${{ inputs.docker-build-args }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          file: ${{ inputs.dockerfile-path }}
+          platforms: ${{ inputs.docker-arch }}
+          pull: true
+          no-cache: false
+          cache-from: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/cache:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/cache:buildcache,mode=max
+          target: ${{ inputs.build-target }}
