@@ -117,11 +117,10 @@ jobs:
   build-occasio-apps-images:
     runs-on: ubuntu-latest
     needs: 'check-versions'
-    with:
-      ## All should match the occasio app image version
-      occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
-      release_version: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
-      ask_occasio_tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+    env:
+      OCCASIO_TAG: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+      RELEASE_VERSION: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
+      ASK_OCCASIO_TAG: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }}
     outputs:
       docker-tag: ${{ steps.meta.outputs.version }}
       docker-repo: ${{ steps.docker-repo.outputs.DOCKER_REPOSITORY }}
