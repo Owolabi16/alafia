@@ -227,14 +227,14 @@ jobs:
           prerelease: true
           tag: ${{ needs.check-versions.outputs.OCASSIO_APP_TAG }} # see - https://github.com/occasio-Technology-Solutions/occasio-apps/blob/930cd9476e2578352782c625df47b12d363e4049/charts/occasio/templates/deployment.yaml#L42
 
-  build-occasio-apps-charts:
-    uses: ./.github/workflows/build-charts.yaml
-    needs: check-versions
-    secrets: inherit
-    with:
-      ask_occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
-      occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
-      chart_overwrite: true          
+  # build-occasio-apps-charts:
+  #   uses: ./.github/workflows/build-charts.yaml
+  #   needs: check-versions
+  #   secrets: inherit
+  #   with:
+  #     ask_occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
+  #     occasio_tag: ${{ needs.check-versions.outputs.chart-image-tag-version }}
+  #     chart_overwrite: true          
 
   build-occasio-apps-charts:
     runs-on: ubuntu-latest
