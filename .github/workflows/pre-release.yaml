@@ -236,7 +236,7 @@ jobs:
 
   build-occasio-apps-charts:
     runs-on: ubuntu-latest
-    needs: 'check-versions'
+    needs: [check-versions, build-occasio-apps-images]
     outputs:
       docker-tag: ${{ steps.meta.outputs.version }}
       docker-repo: ${{ steps.docker-repo.outputs.DOCKER_REPOSITORY }}
